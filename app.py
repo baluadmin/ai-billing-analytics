@@ -15,7 +15,6 @@ APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx-sFUudPmSnrfciS08oQ
 def load_sheet(url):
     try:
         df = pd.read_csv(url)
-        # Clean column names to prevent spacing/casing mismatches
         df.columns = df.columns.astype(str).str.strip().str.title()
         return df
     except Exception as e:
@@ -33,6 +32,16 @@ tab_billing, tab_analytics = st.tabs(["⚡ Counter Billing (POS)", "📊 Store A
 with tab_billing:
     st.subheader("🛍️ Product Billing Counter")
 
+    # Build product catalog from Inventory tab safely
+    product_catalog = {}
+    if not df_inv.empty and 'Product Name' in df_inv.columns:
+        for _, row in df_inv.iterrows():
+            p_name = str(row['Product Name']).strip()
+            # Skip empty or placeholder rows if any
+            if p_name and p_name.lower() != 'nan':
+                p_price = float(row['Unit Price']) if 'Unit Price' in df_inv.columns and pd.notna(row['Unit Price']) else 100.0
+                product_catalog[p_name] = p_price
+
     col_form, col_summary = st.columns([1.2, 1])
 
     with col_form:
@@ -41,20 +50,28 @@ with tab_billing:
             customer_name = st.text_input("Customer Name")
             customer_phone = st.text_input("Customer Phone Number")
             
-            product_name = st.text_input("Product Name")
-            unit_price = st.number_input("Unit Price (₹)", min_value=0.0, value=100.0, step=10.0)
+            # Product selection with search suggestions if inventory exists, otherwise empty text box
+            if product_catalog:
+                #selectbox acts as a suggestion/search dropdown with items from inventory
+                selected_product = st.selectbox("Search or Select Product Name", ["-- Select Product --"] + list(product_catalog.keys()))
+                unit_price = product_catalog.get(selected_product, 0.0) if selected_product != "-- Select Product --" else 0.0
+            else:
+                selected_product = st.text_input("Product Name (Inventory is empty)")
+                unit_price = st.number_input("Unit Price (₹)", min_value=0.0, value=100.0, step=10.0)
+
             quantity = st.number_input("Quantity", min_value=1, value=1, step=1)
-            
             submitted = st.form_submit_button("Print Bill & Save to Google Sheet")
 
     with col_summary:
         st.markdown("### 🧾 Current Bill Preview")
-        total_amount = unit_price * quantity
+        actual_price = unit_price if product_catalog else unit_price
+        total_amount = actual_price * quantity
         st.metric("Total Payable", f"₹ {total_amount}")
         
         if submitted:
-            if not customer_phone or not customer_name or not product_name:
-                st.error("⚠️ Please fill in Customer Name, Phone Number, and Product Name.")
+            final_prod = selected_product if product_catalog else selected_product
+            if not customer_phone or not customer_name or final_prod == "-- Select Product --" or not final_prod:
+                st.error("⚠️ Please fill in Customer Name, Phone Number, and select a valid Product.")
             else:
                 tx_id = "TXN" + datetime.now().strftime("%Y%m%d%H%M%S")
                 payload = {
@@ -63,9 +80,9 @@ with tab_billing:
                     "time": datetime.now().strftime("%H:%M:%S"),
                     "customer_phone": str(customer_phone).strip(),
                     "customer_name": customer_name.strip(),
-                    "product_name": product_name.strip(),
+                    "product_name": final_prod.strip(),
                     "quantity": int(quantity),
-                    "unit_price": float(unit_price)
+                    "unit_price": float(actual_price)
                 }
 
                 try:
@@ -117,8 +134,6 @@ with tab_analytics:
                 prod_demand = df_tx.groupby('Product Name')['Quantity'].sum().reset_index().sort_values(by='Quantity', ascending=False)
                 fig_prod = px.bar(prod_demand, x='Quantity', y='Product Name', orientation='h')
                 st.plotly_chart(fig_prod, use_container_width=True)
-            else:
-                st.warning("Column 'Product Name' not detected in Transactions sheet.")
 
         with col_b:
             if 'Customer Type' in df_tx.columns:
