@@ -158,8 +158,16 @@ with tab_analytics:
 
         st.markdown("---")
         st.subheader("⏰ Shop Rush Timing & Peak Hours")
-        rush_df = df_tx.groupby('Hour')['Transaction Id'].count().reset_index()
-        fig_rush = px.bar(rush_df, x='Hour', y='Transaction Id', title="Footfall by Hour of Day")
+        
+        # Fixed to nunique() to properly count unique customer bills per hour
+        rush_df = df_tx.groupby('Hour')['Transaction Id'].nunique().reset_index()
+        fig_rush = px.bar(
+            rush_df, 
+            x='Hour', 
+            y='Transaction Id', 
+            title="Number of Customer Bills by Hour of Day",
+            labels={'Transaction Id': 'Number of Customer Bills', 'Hour': 'Hour of Day'}
+        )
         st.plotly_chart(fig_rush, use_container_width=True)
 
         col_a, col_b = st.columns(2)
