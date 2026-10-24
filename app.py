@@ -145,7 +145,10 @@ with tab_analytics:
         st.info("ℹ️ No transaction data found yet. Generate a bill in the POS tab to view sales analytics.")
     else:
         df_tx['Date'] = pd.to_datetime(df_tx['Date'], errors='coerce')
-        df_tx['Hour'] = pd.to_datetime(df_tx['Time'], format='%H:%M:%S', errors='coerce').dt.hour if 'Time' in df_tx.columns else 12
+        
+        # Robust time parsing handling various string formats safely
+        df_tx['Hour'] = pd.to_datetime(df_tx['Time'], format='mixed', errors='coerce').dt.hour
+        df_tx['Hour'] = df_tx['Hour'].fillna(12).astype(int)
 
         total_sales = int((df_tx['Quantity'] * df_tx['Unit Price']).sum()) if 'Quantity' in df_tx.columns and 'Unit Price' in df_tx.columns else 0
         total_bills = len(df_tx['Transaction Id'].unique())
@@ -159,14 +162,13 @@ with tab_analytics:
         st.markdown("---")
         st.subheader("⏰ Shop Rush Timing & Peak Hours")
         
-        # Fixed to nunique() to properly count unique customer bills per hour
         rush_df = df_tx.groupby('Hour')['Transaction Id'].nunique().reset_index()
         fig_rush = px.bar(
             rush_df, 
             x='Hour', 
             y='Transaction Id', 
             title="Number of Customer Bills by Hour of Day",
-            labels={'Transaction Id': 'Number of Customer Bills', 'Hour': 'Hour of Day'}
+            labels={'Transaction Id': 'Number of Customer Bills', 'Hour': 'Hour of Day (24h)'}
         )
         st.plotly_chart(fig_rush, use_container_width=True)
 
