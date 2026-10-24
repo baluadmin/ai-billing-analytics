@@ -26,18 +26,21 @@ df_inv = load_sheet(INV_CSV_URL)
 st.title("🛒 Smart Store POS & Analytics Platform")
 tab_billing, tab_analytics = st.tabs(["⚡ Counter Billing (POS)", "📊 Store Analytics & Inventory"])
 
+# Initialize cart in session state
+if "cart" not in st.session_state:
+    st.session_state.cart = []
+
 # ==========================================
-# TAB 1: FRONT-END BILLING COUNTER
+# TAB 1: MULTI-PRODUCT CART BILLING COUNTER
 # ==========================================
 with tab_billing:
-    st.subheader("🛍️ Product Billing Counter")
+    st.subheader("🛍️ Multi-Product Billing Counter")
 
     # Build product catalog from Inventory tab safely
     product_catalog = {}
     if not df_inv.empty and 'Product Name' in df_inv.columns:
         for _, row in df_inv.iterrows():
             p_name = str(row['Product Name']).strip()
-            # Skip empty or placeholder rows if any
             if p_name and p_name.lower() != 'nan':
                 p_price = float(row['Unit Price']) if 'Unit Price' in df_inv.columns and pd.notna(row['Unit Price']) else 100.0
                 product_catalog[p_name] = p_price
@@ -45,55 +48,87 @@ with tab_billing:
     col_form, col_summary = st.columns([1.2, 1])
 
     with col_form:
-        with st.form("billing_form", clear_on_submit=True):
-            st.markdown("### Customer & Item Details")
-            customer_name = st.text_input("Customer Name")
-            customer_phone = st.text_input("Customer Phone Number")
-            
-            # Product selection with search suggestions if inventory exists, otherwise empty text box
+        st.markdown("### Customer Details")
+        customer_name = st.text_input("Customer Name", value=st.session_state.get("cust_name", ""))
+        customer_phone = st.text_input("Customer Phone Number", value=st.session_state.get("cust_phone", ""))
+        
+        st.markdown("### Add Items to Cart")
+        with st.form("add_item_form", clear_on_submit=True):
             if product_catalog:
-                #selectbox acts as a suggestion/search dropdown with items from inventory
                 selected_product = st.selectbox("Search or Select Product Name", ["-- Select Product --"] + list(product_catalog.keys()))
                 unit_price = product_catalog.get(selected_product, 0.0) if selected_product != "-- Select Product --" else 0.0
             else:
-                selected_product = st.text_input("Product Name (Inventory is empty)")
+                selected_product = st.text_input("Product Name")
                 unit_price = st.number_input("Unit Price (₹)", min_value=0.0, value=100.0, step=10.0)
 
             quantity = st.number_input("Quantity", min_value=1, value=1, step=1)
-            submitted = st.form_submit_button("Print Bill & Save to Google Sheet")
+            add_to_cart = st.form_submit_button("➕ Add to Cart")
+
+            if add_to_cart:
+                if selected_product and selected_product != "-- Select Product --":
+                    st.session_state.cart.append({
+                        "product_name": selected_product,
+                        "unit_price": unit_price,
+                        "quantity": quantity,
+                        "total": unit_price * quantity
+                    })
+                    st.success(f"Added {selected_product} to cart!")
+                else:
+                    st.error("Please select a valid product.")
 
     with col_summary:
-        st.markdown("### 🧾 Current Bill Preview")
-        actual_price = unit_price if product_catalog else unit_price
-        total_amount = actual_price * quantity
-        st.metric("Total Payable", f"₹ {total_amount}")
+        st.markdown("### 🧾 Current Bill Cart")
         
-        if submitted:
-            final_prod = selected_product if product_catalog else selected_product
-            if not customer_phone or not customer_name or final_prod == "-- Select Product --" or not final_prod:
-                st.error("⚠️ Please fill in Customer Name, Phone Number, and select a valid Product.")
-            else:
-                tx_id = "TXN" + datetime.now().strftime("%Y%m%d%H%M%S")
-                payload = {
-                    "transaction_id": tx_id,
-                    "date": datetime.now().strftime("%Y-%m-%d"),
-                    "time": datetime.now().strftime("%H:%M:%S"),
-                    "customer_phone": str(customer_phone).strip(),
-                    "customer_name": customer_name.strip(),
-                    "product_name": final_prod.strip(),
-                    "quantity": int(quantity),
-                    "unit_price": float(actual_price)
-                }
+        if len(st.session_state.cart) > 0:
+            cart_df = pd.DataFrame(st.session_state.cart)
+            st.dataframe(cart_df[['product_name', 'unit_price', 'quantity', 'total']], use_container_width=True)
+            
+            grand_total = cart_df['total'].sum()
+            st.metric("Grand Total Payable", f"₹ {grand_total}")
 
-                try:
-                    response = requests.post(APPS_SCRIPT_URL, json=payload)
-                    if response.status_code == 200:
-                        st.success(f"✅ Bill Generated Successfully! (ID: {tx_id})")
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("🗑️ Clear Cart"):
+                    st.session_state.cart = []
+                    st.rerun()
+            with col_btn2:
+                checkout_btn = st.button("🚀 Checkout & Save All")
+
+            if checkout_btn:
+                if not customer_phone or not customer_name:
+                    st.error("⚠️ Please enter Customer Name and Phone Number.")
+                else:
+                    tx_id = "TXN" + datetime.now().strftime("%Y%m%d%H%M%S")
+                    current_date = datetime.now().strftime("%Y-%m-%d")
+                    current_time = datetime.now().strftime("%H:%M:%S")
+                    
+                    success_all = True
+                    for item in st.session_state.cart:
+                        payload = {
+                            "transaction_id": tx_id,
+                            "date": current_date,
+                            "time": current_time,
+                            "customer_phone": str(customer_phone).strip(),
+                            "customer_name": customer_name.strip(),
+                            "product_name": item['product_name'],
+                            "quantity": int(item['quantity']),
+                            "unit_price": float(item['unit_price'])
+                        }
+                        try:
+                            res = requests.post(APPS_SCRIPT_URL, json=payload)
+                            if res.status_code != 200:
+                                success_all = False
+                        except:
+                            success_all = False
+
+                    if success_all:
+                        st.success(f"✅ Order Checked Out Successfully! (Bill ID: {tx_id})")
+                        st.session_state.cart = []
                         st.balloons()
                     else:
-                        st.error("⚠️ Failed to record to Google Sheet. Check Apps Script deployment.")
-                except Exception as ex:
-                    st.error(f"Connection error: {ex}")
+                        st.error("⚠️ Error saving some items to Google Sheet.")
+        else:
+            st.info("Your cart is empty. Add products using the form on the left.")
 
 # ==========================================
 # TAB 2: ANALYTICS & INVENTORY DASHBOARD
