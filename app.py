@@ -29,63 +29,52 @@ tab_billing, tab_analytics = st.tabs(["⚡ Counter Billing (POS)", "📊 Store A
 # ==========================================
 with tab_billing:
     st.subheader("🛍️ Product Billing Counter")
-    
-    product_catalog = {}
-    if not df_inv.empty and 'Product Name' in df_inv.columns:
-        for _, row in df_inv.iterrows():
-            prod_name = str(row['Product Name']).strip()
-            prod_price = float(row['Unit Price']) if 'Unit Price' in df_inv.columns and pd.notna(row['Unit Price']) else 100.0
-            product_catalog[prod_name] = prod_price
 
-    if not product_catalog:
-        st.warning("⚠️ No products found in your Google Sheet Inventory tab. Please add your products and prices there.")
-    else:
-        col_form, col_summary = st.columns([1.2, 1])
+    col_form, col_summary = st.columns([1.2, 1])
 
-        with col_form:
-            with st.form("billing_form", clear_on_submit=True):
-                st.markdown("### Customer & Item Details")
-                customer_name = st.text_input("Customer Name")
-                customer_phone = st.text_input("Customer Phone Number")
-                
-                selected_product = st.selectbox("Select Product from Inventory", list(product_catalog.keys()))
-                unit_price = product_catalog[selected_product]
-                
-                st.text(f"Unit Price: ₹ {unit_price}")
-                quantity = st.number_input("Quantity", min_value=1, value=1, step=1)
-                
-                submitted = st.form_submit_button("Print Bill & Save to Google Sheet")
-
-        with col_summary:
-            st.markdown("### 🧾 Current Bill Preview")
-            total_amount = unit_price * quantity
-            st.metric("Total Payable", f"₹ {total_amount}")
+    with col_form:
+        with st.form("billing_form", clear_on_submit=True):
+            st.markdown("### Customer & Item Details")
+            customer_name = st.text_input("Customer Name")
+            customer_phone = st.text_input("Customer Phone Number")
             
-            if submitted:
-                if not customer_phone or not customer_name:
-                    st.error("⚠️ Please enter Customer Name and Phone Number.")
-                else:
-                    tx_id = "TXN" + datetime.now().strftime("%Y%m%d%H%M%S")
-                    payload = {
-                        "transaction_id": tx_id,
-                        "date": datetime.now().strftime("%Y-%m-%d"),
-                        "time": datetime.now().strftime("%H:%M:%S"),
-                        "customer_phone": str(customer_phone).strip(),
-                        "customer_name": customer_name.strip(),
-                        "product_name": selected_product,
-                        "quantity": int(quantity),
-                        "unit_price": float(unit_price)
-                    }
+            # Type product name directly instead of selecting from inventory
+            product_name = st.text_input("Product Name")
+            unit_price = st.number_input("Unit Price (₹)", min_value=0.0, value=100.0, step=10.0)
+            quantity = st.number_input("Quantity", min_value=1, value=1, step=1)
+            
+            submitted = st.form_submit_button("Print Bill & Save to Google Sheet")
 
-                    try:
-                        response = requests.post(APPS_SCRIPT_URL, json=payload)
-                        if response.status_code == 200:
-                            st.success(f"✅ Bill Generated Successfully! (ID: {tx_id})")
-                            st.balloons()
-                        else:
-                            st.error("⚠️ Failed to record to Google Sheet. Check Apps Script deployment.")
-                    except Exception as ex:
-                        st.error(f"Connection error: {ex}")
+    with col_summary:
+        st.markdown("### 🧾 Current Bill Preview")
+        total_amount = unit_price * quantity
+        st.metric("Total Payable", f"₹ {total_amount}")
+        
+        if submitted:
+            if not customer_phone or not customer_name or not product_name:
+                st.error("⚠️ Please fill in Customer Name, Phone Number, and Product Name.")
+            else:
+                tx_id = "TXN" + datetime.now().strftime("%Y%m%d%H%M%S")
+                payload = {
+                    "transaction_id": tx_id,
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "time": datetime.now().strftime("%H:%M:%S"),
+                    "customer_phone": str(customer_phone).strip(),
+                    "customer_name": customer_name.strip(),
+                    "product_name": product_name.strip(),
+                    "quantity": int(quantity),
+                    "unit_price": float(unit_price)
+                }
+
+                try:
+                    response = requests.post(APPS_SCRIPT_URL, json=payload)
+                    if response.status_code == 200:
+                        st.success(f"✅ Bill Generated Successfully! (ID: {tx_id})")
+                        st.balloons()
+                    else:
+                        st.error("⚠️ Failed to record to Google Sheet. Check Apps Script deployment.")
+                except Exception as ex:
+                    st.error(f"Connection error: {ex}")
 
 # ==========================================
 # TAB 2: ANALYTICS & INVENTORY DASHBOARD
