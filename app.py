@@ -9,7 +9,7 @@ st.set_page_config(page_title="Smart Store Billing & Analytics Dashboard", layou
 st.sidebar.header("⚙️ Database Connection")
 sheet_csv_input = st.sidebar.text_input(
     "Google Sheet Published CSV URL",
-    value="YOUR_GOOGLE_SHEET_CSV_EXPORT_URL",
+    value="https://docs.google.com/spreadsheets/d/1OzON29VseWISfGfXyEJ3evicXaBtPo8D0X54rxp71Jk/export?format=csv",
     help="Paste your published CSV link from Google Sheets here."
 )
 
@@ -30,12 +30,11 @@ st.title("📊 Smart Store Billing & Analytics Dashboard")
 df = load_data(sheet_csv_input)
 
 if df.empty:
-    st.warning("⚠️ No transaction data connected yet.")
+    st.warning("⚠️ No transaction data connected yet or your 'Transactions' sheet is empty.")
     st.info("""
-    ### How to connect your Google Sheet in 3 steps:
-    1. Open your Google Sheet containing your **Transactions** tab.
-    2. Go to **File > Share > Publish to web**.
-    3. Select your **Transactions** sheet, choose **Comma-separated values (.csv)**, click **Publish**, and copy the link into the **sidebar input box on the left**.
+    ### How to populate your sheet:
+    Make sure your Google Sheet has a tab named **Transactions** with columns:
+    `Transaction ID`, `Date`, `Time`, `Customer Phone`, `Product Name`, `Quantity`, `Unit Price`, `Customer Type`
     """)
 else:
     # Ensure Date/Time columns are parsed safely
