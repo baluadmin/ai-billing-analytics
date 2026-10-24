@@ -6,145 +6,135 @@ from datetime import datetime
 
 st.set_page_config(page_title="Smart Store Billing & Analytics POS", layout="wide")
 
-# --- CONFIGURATION ---
-SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1OzON29VseWISfGfXyEJ3evicXaBtPo8D0X54rxp71Jk/export?format=csv"
+# Replace with your published CSV link or use export format for your specific tabs
+SHEET_ID = "1OzON29VseWISfGfXyEJ3evicXaBtPo8D0X54rxp71Jk"
+TX_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Transactions"
+INV_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Inventory"
 APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx-sFUudPmSnrfciS08oQc8k_fAQ-KSniWa5PttB1L5XpLOx6CkGIw9wUrx38LxX8J5/exec"
 
 @st.cache_data(ttl=5)
-def load_data(url):
+def load_sheet(url):
     try:
-        df = pd.read_csv(url)
-        return df
+        return pd.read_csv(url)
     except Exception as e:
         return pd.DataFrame()
 
-df = load_data(SHEET_CSV_URL)
+df_tx = load_sheet(TX_CSV_URL)
+df_inv = load_sheet(INV_CSV_URL)
 
-# --- NAVIGATION TABS ---
 st.title("🛒 Smart Store POS & Analytics Platform")
-tab_billing, tab_analytics = st.tabs(["⚡ Counter Billing (POS)", "📊 Store Analytics & Rush Hours"])
+tab_billing, tab_analytics = st.tabs(["⚡ Counter Billing (POS)", "📊 Store Analytics & Inventory"])
 
 # ==========================================
-# TAB 1: FRONT-END BILLING & PRODUCT LIST
+# TAB 1: FRONT-END BILLING & DYNAMIC PRODUCTS
 # ==========================================
 with tab_billing:
     st.subheader("🛍️ Product Billing Counter")
     
-    # Define your store product catalog & prices here
-    product_catalog = {
-        "Mobile Charger": 350,
-        "Tempered Glass": 150,
-        "Earphones": 500,
-        "USB Cable": 200,
-        "Power Bank": 1200,
-        "Phone Case": 250,
-        "Bluetooth Speaker": 999,
-        "Memory Card 32GB": 450
-    }
+    if df_inv.empty or 'Product Name' not in df_inv.columns:
+        st.warning("⚠️ Please make sure your 'Inventory' tab has headers: Product ID, Product Name, Current Stock, Unit Price")
+        product_catalog = {}
+    else:
+        # Build product catalog dynamically from Google Sheet Inventory tab
+        product_catalog = {}
+        for _, row in df_inv.iterrows():
+            prod_name = str(row['Product Name']).strip()
+            # Fallback price if Unit Price column is missing
+            prod_price = float(row['Unit Price']) if 'Unit Price' in df_inv.columns and pd.notna(row['Unit Price']) else 100.0
+            product_catalog[prod_name] = prod_price
 
-    col_form, col_summary = st.columns([1.2, 1])
+    if not product_catalog:
+        st.error("No products found in Inventory. Please add items to your Google Sheet Inventory tab.")
+    else:
+        col_form, col_summary = st.columns([1.2, 1])
 
-    with col_form:
-        with st.form("billing_form", clear_on_submit=True):
-            st.markdown("### Customer & Item Details")
-            customer_name = st.text_input("Customer Name")
-            customer_phone = st.text_input("Customer Phone Number (Required for Tracking)")
+        with col_form:
+            with st.form("billing_form", clear_on_submit=True):
+                st.markdown("### Customer & Item Details")
+                customer_name = st.text_input("Customer Name")
+                customer_phone = st.text_input("Customer Phone Number")
+                
+                selected_product = st.selectbox("Select Product from Inventory", list(product_catalog.keys()))
+                unit_price = product_catalog[selected_product]
+                
+                st.text(f"Unit Price: ₹ {unit_price}")
+                quantity = st.number_input("Quantity", min_value=1, value=1, step=1)
+                
+                submitted = st.form_submit_button("Print Bill & Save to Google Sheet")
+
+        with col_summary:
+            st.markdown("### 🧾 Current Bill Preview")
+            total_amount = unit_price * quantity
+            st.metric("Total Payable", f"₹ {total_amount}")
             
-            selected_product = st.selectbox("Select Product", list(product_catalog.keys()))
-            unit_price = product_catalog[selected_product]
-            
-            st.text(f"Unit Price: ₹ {unit_price}")
-            quantity = st.number_input("Quantity", min_value=1, value=1, step=1)
-            
-            submitted = st.form_submit_button("Print Bill & Save to Google Sheet")
+            if submitted:
+                if not customer_phone or not customer_name:
+                    st.error("⚠️ Please enter Customer Name and Phone Number.")
+                else:
+                    tx_id = "TXN" + datetime.now().strftime("%Y%m%d%H%M%S")
+                    payload = {
+                        "transaction_id": tx_id,
+                        "date": datetime.now().strftime("%Y-%m-%d"),
+                        "time": datetime.now().strftime("%H:%M:%S"),
+                        "customer_phone": str(customer_phone).strip(),
+                        "customer_name": customer_name.strip(),
+                        "product_name": selected_product,
+                        "quantity": int(quantity),
+                        "unit_price": float(unit_price)
+                    }
 
-    with col_summary:
-        st.markdown("### 🧾 Current Bill Preview")
-        total_amount = unit_price * quantity
-        st.metric("Total Payable", f"₹ {total_amount}")
-        
-        if submitted:
-            if not customer_phone or not customer_name:
-                st.error("⚠️ Please enter Customer Name and Phone Number.")
-            else:
-                # Generate unique transaction ID
-                tx_id = "TXN" + datetime.now().strftime("%Y%m%d%H%M%S")
-                current_date = datetime.now().strftime("%Y-%m-%d")
-                current_time = datetime.now().strftime("%H:%M:%S")
-
-                payload = {
-                    "transaction_id": tx_id,
-                    "date": current_date,
-                    "time": current_time,
-                    "customer_phone": str(customer_phone).strip(),
-                    "customer_name": customer_name.strip(),
-                    "product_name": selected_product,
-                    "quantity": int(quantity),
-                    "unit_price": float(unit_price)
-                }
-
-                try:
-                    # Send data to Google Apps Script Webhook
-                    response = requests.post(APPS_SCRIPT_URL, json=payload)
-                    if response.status_code == 200:
-                        st.success(f"✅ Bill Generated Successfully! (ID: {tx_id})")
-                        st.balloons()
-                    else:
-                        st.error("⚠️ Failed to record to Google Sheet. Check Apps Script deployment.")
-                except Exception as ex:
-                    st.error(f"Connection error: {ex}")
+                    try:
+                        response = requests.post(APPS_SCRIPT_URL, json=payload)
+                        if response.status_code == 200:
+                            st.success(f"✅ Bill Generated Successfully! (ID: {tx_id})")
+                            st.balloons()
+                        else:
+                            st.error("⚠️ Failed to record to Google Sheet. Check Apps Script deployment.")
+                    except Exception as ex:
+                        st.error(f"Connection error: {ex}")
 
 # ==========================================
-# TAB 2: ANALYTICS & RUSH TIMING DASHBOARD
+# TAB 2: ANALYTICS & INVENTORY VIEW
 # ==========================================
 with tab_analytics:
-    st.subheader("📈 Live Store Analytics & Rush Hours")
+    st.subheader("📈 Live Store Analytics & Inventory Stock")
 
-    if df.empty:
-        st.warning("⚠️ No transaction data found in your Google Sheet yet. Generate a bill in the POS tab above to see analytics!")
-    else:
-        # Parse Dates & Times safely
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-        df['Hour'] = pd.to_datetime(df['Time'], format='%H:%M:%S', errors='coerce').dt.hour
-
-        # Top Metric Cards
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total Sales", f"₹ {int((df['Quantity'] * df['Unit Price']).sum())}")
-        c2.metric("Total Bills", len(df['Transaction ID'].unique()))
-        c3.metric("New Customers", len(df[df['Customer Type'] == 'New']['Customer Phone'].unique()))
-        c4.metric("Returning Customers", len(df[df['Customer Type'] == 'Old']['Customer Phone'].unique()))
-
+    if not df_inv.empty:
+        st.markdown("### 📦 Current Stock Levels")
+        st.dataframe(df_inv, use_container_width=True)
         st.markdown("---")
 
-        # 1. Rush Hour Timing Analysis
+    if df_tx.empty or 'Transaction ID' not in df_tx.columns:
+        st.info("ℹ️ No transaction data found yet. Generate a bill in the POS tab to start viewing sales rush hours and product demand.")
+    else:
+        df_tx['Date'] = pd.to_datetime(df_tx['Date'], errors='coerce')
+        df_tx['Hour'] = pd.to_datetime(df_tx['Time'], format='%H:%M:%S', errors='coerce').dt.hour if 'Time' in df_tx.columns else 12
+
+        total_sales = int((df_tx['Quantity'] * df_tx['Unit Price']).sum()) if 'Quantity' in df_tx.columns and 'Unit Price' in df_tx.columns else 0
+        total_bills = len(df_tx['Transaction ID'].unique())
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Sales", f"₹ {total_sales}")
+        c2.metric("Total Bills", total_bills)
+        c3.metric("New Customers", len(df_tx[df_tx['Customer Type'] == 'New']['Customer Phone'].unique()) if 'Customer Type' in df_tx.columns else 0)
+        c4.metric("Returning Customers", len(df_tx[df_tx['Customer Type'] == 'Old']['Customer Phone'].unique()) if 'Customer Type' in df_tx.columns else 0)
+
+        st.markdown("---")
         st.subheader("⏰ Shop Rush Timing & Peak Hours")
-        rush_df = df.groupby('Hour')['Transaction ID'].count().reset_index()
-        fig_rush = px.bar(rush_df, x='Hour', y='Transaction ID', title="Footfall / Transactions by Hour of Day", labels={'Transaction ID': 'Sales Count'})
+        rush_df = df_tx.groupby('Hour')['Transaction ID'].count().reset_index()
+        fig_rush = px.bar(rush_df, x='Hour', y='Transaction ID', title="Footfall by Hour of Day")
         st.plotly_chart(fig_rush, use_container_width=True)
 
-        # 2. Product Demand & Customer Segments
         col_a, col_b = st.columns(2)
         with col_a:
             st.subheader("🔥 Product Demand (Most Selling)")
-            prod_df = df.groupby('Product Name')['Quantity'].sum().reset_index().sort_values(by='Quantity', ascending=False)
-            fig_prod = px.bar(prod_df, x='Quantity', y='Product Name', orientation='h', title="Units Sold per Product")
+            prod_demand = df_tx.groupby('Product Name')['Quantity'].sum().reset_index().sort_values(by='Quantity', ascending=False)
+            fig_prod = px.bar(prod_demand, x='Quantity', y='Product Name', orientation='h')
             st.plotly_chart(fig_prod, use_container_width=True)
 
         with col_b:
-            st.subheader("👥 Customer Retention (New vs Old)")
-            cust_type_df = df['Customer Type'].value_counts().reset_index()
-            fig_cust = px.pie(cust_type_df, names='Customer Type', values='count', title="New vs Old Ratio")
-            st.plotly_chart(fig_cust, use_container_width=True)
-
-        # 3. Smart Recommendations
-        st.markdown("---")
-        st.subheader("💡 Automated Store Performance Insights")
-        if not rush_df.empty and not prod_df.empty:
-            peak_hr = int(rush_df.sort_values(by='Transaction ID', ascending=False).iloc[0]['Hour'])
-            top_prod = prod_df.iloc[0]['Product Name']
-            top_qty = prod_df.iloc[0]['Units Sold'] if 'Units Sold' in prod_df.columns else prod_df.iloc[0]['Quantity']
-            
-            st.info(f"""
-            * **Peak Rush Hour:** Your shop experiences the highest footfall around **{peak_hr}:00 hours**. Keep your billing counter staffed during this slot.
-            * **Top Selling Product:** **{top_prod}** has the highest customer demand (**{top_qty} units**). Make sure you keep enough stock in your inventory.
-            """)
+            if 'Customer Type' in df_tx.columns:
+                st.subheader("👥 Customer Retention")
+                cust_type_df = df_tx['Customer Type'].value_counts().reset_index()
+                fig_cust = px.pie(cust_type_df, names='Customer Type', values='count')
+                st.plotly_chart(fig_cust, use_container_width=True)
