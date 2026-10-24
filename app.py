@@ -6,8 +6,8 @@ import requests
 st.set_page_config(page_title="Store Billing & Analytics Dashboard", layout="wide")
 
 # Replace with your published Google Sheet CSV link for Transactions
-SHEET_CSV_URL = "YOUR_GOOGLE_SHEET_CSV_EXPORT_URL"
-APPS_SCRIPT_URL = "YOUR_APPS_SCRIPT_WEB_APP_URL"
+SHEET_CSV_URL = "https://script.google.com/macros/library/d/12QZCxubvfaEALstQTSIVG_FkwclthUYipfcBbKjtQba-RqN7P9yRPcPY/1"
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx-sFUudPmSnrfciS08oQc8k_fAQ-KSniWa5PttB1L5XpLOx6CkGIw9wUrx38LxX8J5/exec""
 
 @st.cache_data(ttl=60)
 def load_data():
