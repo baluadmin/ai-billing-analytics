@@ -3,29 +3,43 @@ import pandas as pd
 import plotly.express as px
 import requests
 
-st.set_page_config(page_title="Store Billing & Analytics Dashboard", layout="wide")
+st.set_page_config(page_title="Smart Store Billing & Analytics Dashboard", layout="wide")
 
-# Replace with your published Google Sheet CSV link for Transactions
-SHEET_CSV_URL = "https://script.google.com/macros/library/d/12QZCxubvfaEALstQTSIVG_FkwclthUYipfcBbKjtQba-RqN7P9yRPcPY/1"
+# --- SIDEBAR CONFIGURATION ---
+st.sidebar.header("⚙️ Database Connection")
+sheet_csv_input = st.sidebar.text_input(
+    "Google Sheet Published CSV URL",
+    value="YOUR_GOOGLE_SHEET_CSV_EXPORT_URL",
+    help="Paste your published CSV link from Google Sheets here."
+)
+
 APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx-sFUudPmSnrfciS08oQc8k_fAQ-KSniWa5PttB1L5XpLOx6CkGIw9wUrx38LxX8J5/exec"
 
-@st.cache_data(ttl=60)
-def load_data():
+@st.cache_data(ttl=10)
+def load_data(url):
+    if not url or url == "YOUR_GOOGLE_SHEET_CSV_EXPORT_URL":
+        return pd.DataFrame()
     try:
-        df = pd.read_csv(SHEET_CSV_URL)
+        df = pd.read_csv(url)
         return df
     except Exception as e:
         return pd.DataFrame()
 
 st.title("📊 Smart Store Billing & Analytics Dashboard")
 
-df = load_data()
+df = load_data(sheet_csv_input)
 
 if df.empty:
-    st.warning("No transaction data found yet. Connect your Google Sheet CSV URL in the script.")
+    st.warning("⚠️ No transaction data connected yet.")
+    st.info("""
+    ### How to connect your Google Sheet in 3 steps:
+    1. Open your Google Sheet containing your **Transactions** tab.
+    2. Go to **File > Share > Publish to web**.
+    3. Select your **Transactions** sheet, choose **Comma-separated values (.csv)**, click **Publish**, and copy the link into the **sidebar input box on the left**.
+    """)
 else:
-    # Ensure Date/Time columns are parsed
-    df['Date'] = pd.to_datetime(df['Date'])
+    # Ensure Date/Time columns are parsed safely
+    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
     df['Hour'] = pd.to_datetime(df['Time'], format='%H:%M:%S', errors='coerce').dt.hour
 
     # Top Metrics Row
@@ -57,22 +71,21 @@ else:
         fig_cust = px.pie(cust_type_df, names='Customer Type', values='count', title="New vs Old Customer Ratio")
         st.plotly_chart(fig_cust, use_container_width=True)
 
-    # 3. Automated Smart Store Recommendations (No API Key Needed)
+    # 3. Automated Smart Store Recommendations
     st.markdown("---")
     st.subheader("💡 Automated Store Performance Advisor")
     
     if not rush_df.empty and not prod_df.empty:
-        peak_hour = rush_df.sort_values(by='Transaction ID', ascending=False).iloc[0]['Hour']
+        peak_hour = int(rush_df.sort_values(by='Transaction ID', ascending=False).iloc[0]['Hour'])
         top_product = prod_df.iloc[0]['Product Name']
         top_qty = prod_df.iloc[0]['Quantity']
         
-        # Calculate new vs old percentages
         total_cust_count = len(df)
         new_cust_count = len(df[df['Customer Type'] == 'New'])
         new_pct = int((new_cust_count / total_cust_count) * 100) if total_cust_count > 0 else 0
 
         st.info(f"""
-        * **Peak Rush Alert:** Your busiest hour of the day is **{peak_hour}:00 hours**. Ensure you have extra counter staff available during this time slot to prevent billing queues.
-        * **Top Demand Driver:** **{top_product}** is your best-performing item with **{top_qty} units sold**. Make sure you maintain a high buffer stock for this product to avoid stockouts.
-        * **Customer Retention:** **{new_pct}%** of your sales come from new customer interactions. Consider launching a loyalty or discount program to turn these first-time buyers into regular returning patrons.
+        * **Peak Rush Alert:** Your busiest hour of the day is around **{peak_hour}:00 hours**. Ensure you have counter assistance ready during this slot.
+        * **Top Demand Driver:** **{top_product}** leads sales with **{top_qty} units sold**. Keep adequate buffer stock for this item.
+        * **Customer Retention:** **{new_pct}%** of your transactions are from first-time buyers. Consider loyalty rewards to encourage return visits.
         """)
