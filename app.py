@@ -4,9 +4,8 @@ import plotly.express as px
 import requests
 from datetime import datetime
 
-st.set_page_config(page_title="Smart Store Billing & Analytics POS", layout="wide")
+st.set_page_config(page_title="Smart Store POS & Analytics", layout="wide")
 
-# Replace with your published CSV link or use export format for your specific tabs
 SHEET_ID = "1OzON29VseWISfGfXyEJ3evicXaBtPo8D0X54rxp71Jk"
 TX_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Transactions"
 INV_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Inventory"
@@ -26,25 +25,20 @@ st.title("🛒 Smart Store POS & Analytics Platform")
 tab_billing, tab_analytics = st.tabs(["⚡ Counter Billing (POS)", "📊 Store Analytics & Inventory"])
 
 # ==========================================
-# TAB 1: FRONT-END BILLING & DYNAMIC PRODUCTS
+# TAB 1: FRONT-END BILLING COUNTER
 # ==========================================
 with tab_billing:
     st.subheader("🛍️ Product Billing Counter")
     
-    if df_inv.empty or 'Product Name' not in df_inv.columns:
-        st.warning("⚠️ Please make sure your 'Inventory' tab has headers: Product ID, Product Name, Current Stock, Unit Price")
-        product_catalog = {}
-    else:
-        # Build product catalog dynamically from Google Sheet Inventory tab
-        product_catalog = {}
+    product_catalog = {}
+    if not df_inv.empty and 'Product Name' in df_inv.columns:
         for _, row in df_inv.iterrows():
             prod_name = str(row['Product Name']).strip()
-            # Fallback price if Unit Price column is missing
             prod_price = float(row['Unit Price']) if 'Unit Price' in df_inv.columns and pd.notna(row['Unit Price']) else 100.0
             product_catalog[prod_name] = prod_price
 
     if not product_catalog:
-        st.error("No products found in Inventory. Please add items to your Google Sheet Inventory tab.")
+        st.warning("⚠️ No products found in your Google Sheet Inventory tab. Please add your products and prices there.")
     else:
         col_form, col_summary = st.columns([1.2, 1])
 
@@ -94,7 +88,7 @@ with tab_billing:
                         st.error(f"Connection error: {ex}")
 
 # ==========================================
-# TAB 2: ANALYTICS & INVENTORY VIEW
+# TAB 2: ANALYTICS & INVENTORY DASHBOARD
 # ==========================================
 with tab_analytics:
     st.subheader("📈 Live Store Analytics & Inventory Stock")
@@ -105,7 +99,7 @@ with tab_analytics:
         st.markdown("---")
 
     if df_tx.empty or 'Transaction ID' not in df_tx.columns:
-        st.info("ℹ️ No transaction data found yet. Generate a bill in the POS tab to start viewing sales rush hours and product demand.")
+        st.info("ℹ️ No transaction data found yet. Generate a bill in the POS tab to view sales analytics.")
     else:
         df_tx['Date'] = pd.to_datetime(df_tx['Date'], errors='coerce')
         df_tx['Hour'] = pd.to_datetime(df_tx['Time'], format='%H:%M:%S', errors='coerce').dt.hour if 'Time' in df_tx.columns else 12
