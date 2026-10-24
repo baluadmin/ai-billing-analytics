@@ -146,9 +146,9 @@ with tab_analytics:
     else:
         df_tx['Date'] = pd.to_datetime(df_tx['Date'], errors='coerce')
         
-        # Robust time parsing handling various string formats safely
-        df_tx['Hour'] = pd.to_datetime(df_tx['Time'], format='mixed', errors='coerce').dt.hour
-        df_tx['Hour'] = df_tx['Hour'].fillna(12).astype(int)
+        # Clean and safely extract exact hour from time string
+        df_tx['Hour'] = pd.to_datetime(df_tx['Time'].astype(str).str.split().str[-1], format='%H:%M:%S', errors='coerce').dt.hour
+        df_tx['Hour'] = df_tx['Hour'].fillna(datetime.now().hour).astype(int)
 
         total_sales = int((df_tx['Quantity'] * df_tx['Unit Price']).sum()) if 'Quantity' in df_tx.columns and 'Unit Price' in df_tx.columns else 0
         total_bills = len(df_tx['Transaction Id'].unique())
